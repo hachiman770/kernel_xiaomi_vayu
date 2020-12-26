@@ -1220,6 +1220,9 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	uint32_t position, input_x, input_y, finger_cnt = 0;
 	int ret, i;
 
+	pm_qos_update_request(&ts->pm_touch_req, 100);
+	pm_qos_update_request(&ts->pm_spi_req, 100);
+
 #if WAKEUP_GESTURE
 	if (ts->ic_state < NVT_IC_RESUME_IN) {
 		pm_wakeup_event(&ts->input_dev->dev, 5000);
@@ -1318,6 +1321,8 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	input_sync(ts->input_dev);
 
 out:
+	pm_qos_update_request(&ts->pm_spi_req, PM_QOS_DEFAULT_VALUE);
+	pm_qos_update_request(&ts->pm_touch_req, PM_QOS_DEFAULT_VALUE);
 	mutex_unlock(&ts->lock);
 	return IRQ_HANDLED;
 }
@@ -2057,6 +2062,18 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 
 	ts->client->irq = gpio_to_irq(ts->irq_gpio);
 	if (ts->client->irq) {
+		/* Init PM QoS before registering the IRQ */
+		ts->pm_spi_req.type = PM_QOS_REQ_AFFINE_IRQ;
+		ts->pm_spi_req.irq = geni_spi_get_master_irq(ts->client);
+		irq_set_perf_affinity(ts->pm_spi_req.irq, IRQF_PERF_AFFINE);
+		pm_qos_add_request(&ts->pm_spi_req, PM_QOS_CPU_DMA_LATENCY,
+			PM_QOS_DEFAULT_VALUE);
+
+		ts->pm_touch_req.type = PM_QOS_REQ_AFFINE_IRQ;
+		ts->pm_touch_req.irq = ts->client->irq;
+		pm_qos_add_request(&ts->pm_touch_req, PM_QOS_CPU_DMA_LATENCY,
+				PM_QOS_DEFAULT_VALUE);
+
 		NVT_LOG("int_trigger_type=%d\n", ts->int_trigger_type);
 		ts->irq_enabled = true;
 		ret = request_threaded_irq(ts->client->irq, NULL, nvt_ts_work_func,
@@ -2229,6 +2246,9 @@ static int32_t nvt_ts_remove(struct platform_device *pdev)
 
 	if (msm_drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
+
+	pm_qos_remove_request(&ts->pm_touch_req);
+	pm_qos_remove_request(&ts->pm_spi_req);
 
 #if NVT_TOUCH_EXT_PROC
 	nvt_extra_proc_deinit();
