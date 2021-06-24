@@ -715,6 +715,10 @@ LDFLAGS		+= --plugin-opt=O3
 
 endif
 
+ifdef CONFIG_GCC_GRAPHITE
+KBUILD_CFLAGS	+= -fgraphite-identity -floop-nest-optimize
+endif
+
 ifdef CONFIG_LTO_GCC
 LTO_CFLAGS	:= -flto -flto=jobserver -fno-fat-lto-objects \
 		   -fuse-linker-plugin -fwhole-program
