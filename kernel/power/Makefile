@@ -16,4 +16,6 @@ obj-$(CONFIG_PM_WAKELOCKS)	+= wakelock.o
 
 obj-$(CONFIG_MAGIC_SYSRQ)	+= poweroff.o
 
+ifeq ($(CONFIG_PREEMPT_RT_FULL),)
 obj-$(CONFIG_SUSPEND)	+= wakeup_reason.o
+endif
