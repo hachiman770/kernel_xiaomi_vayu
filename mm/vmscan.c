@@ -53,6 +53,7 @@
 #include <linux/psi.h>
 #include <linux/pagewalk.h>
 #include <linux/shmem_fs.h>
+#include <linux/simple_lmk.h>
 
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
@@ -3894,6 +3895,7 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 
 	clear_mm_walk();
 
+#ifndef CONFIG_ANDROID_SIMPLE_LMK
 	/* check the order to exclude compaction-induced reclaim */
 	if (success || !min_ttl || sc->order)
 		return;
@@ -3912,6 +3914,7 @@ static void lru_gen_age_node(struct pglist_data *pgdat, struct scan_control *sc)
 
 		mutex_unlock(&oom_lock);
 	}
+#endif
 }
 
 /*
