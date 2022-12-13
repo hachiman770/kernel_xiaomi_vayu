@@ -1308,12 +1308,6 @@ static int generic_ci_d_hash(const struct dentry *dentry, struct qstr *str)
 	if (ret < 0 && sb_has_strict_encoding(sb))
 		return -EINVAL;
 	return 0;
-err:
-	if (sb_has_strict_encoding(sb))
-		ret = -EINVAL;
-	else
-		ret = 0;
-	return ret;
 }
 
 static const struct dentry_operations generic_ci_dentry_ops = {
