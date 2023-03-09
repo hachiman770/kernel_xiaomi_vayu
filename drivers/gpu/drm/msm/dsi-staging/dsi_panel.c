@@ -1698,7 +1698,7 @@ error:
 	return rc;
 }
 
-static int __initdata phyd_miui = 0;
+static int phyd_miui = 0;
 static int __init _setup_phyd_miui(char *str)
 {
 	get_option(&str, &phyd_miui);
