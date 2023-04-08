@@ -3,6 +3,11 @@
 # Makefile for the kernel software RAID and LVM drivers.
 #
 
+ifeq ($(cc-name),gcc)
+condflags := $(call cc-disable-warning, enum-int-mismatch)
+subdir-ccflags-y += $(condflags)
+endif
+
 dm-mod-y	+= dm.o dm-table.o dm-target.o dm-linear.o dm-stripe.o \
 		   dm-ioctl.o dm-io.o dm-kcopyd.o dm-sysfs.o dm-stats.o \
 		   dm-rq.o
