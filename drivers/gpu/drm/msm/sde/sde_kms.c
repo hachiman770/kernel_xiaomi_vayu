@@ -2117,8 +2117,6 @@ static int _sde_kms_remove_fbs(struct sde_kms *sde_kms, struct drm_file *file,
 					crtc->state->encoder_mask)
 				ret = sde_kms_set_crtc_for_conn(
 					dev, drm_enc, state);
-				if (ret)
-					goto end;
 		}
 	}
 
