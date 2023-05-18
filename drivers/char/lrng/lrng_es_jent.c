@@ -2,19 +2,20 @@
 /*
  * LRNG Fast Entropy Source: Jitter RNG
  *
- * Copyright (C) 2022, Stephan Mueller <smueller@chronox.de>
+ * Copyright (C) 2022 - 2023, Stephan Mueller <smueller@chronox.de>
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <crypto/rng.h>
 #include <linux/fips.h>
 #include <linux/module.h>
 #include <linux/types.h>
-#include <crypto/internal/jitterentropy.h>
 
 #include "lrng_definitions.h"
 #include "lrng_es_aux.h"
 #include "lrng_es_jent.h"
+#include "lrng_es_mgr.h"
 
 /*
  * Estimated entropy of data is a 16th of LRNG_DRNG_SECURITY_STRENGTH_BITS.
@@ -30,17 +31,16 @@ MODULE_PARM_DESC(jent_entropy, "Entropy in bits of 256 data bits from Jitter RNG
 #endif
 
 static bool lrng_jent_initialized = false;
-static struct rand_data *lrng_jent_state;
+static struct crypto_rng *jent;
 
 static int __init lrng_jent_initialize(void)
 {
-	/* Initialize the Jitter RNG after the clocksources are initialized. */
-	if (jent_entropy_init() ||
-	    (lrng_jent_state = jent_entropy_collector_alloc(1, 0)) == NULL) {
-		jent_entropy = 0;
-		pr_info("Jitter RNG unusable on current system\n");
-		return 0;
+	jent = crypto_alloc_rng("jitterentropy_rng", 0, 0);
+	if (IS_ERR(jent)) {
+		pr_err("Cannot allocate Jitter RNG\n");
+		return PTR_ERR(jent);
 	}
+
 	lrng_jent_initialized = true;
 	pr_debug("Jitter RNG working on current system\n");
 
@@ -57,9 +57,8 @@ static int __init lrng_jent_initialize(void)
 	    jent_entropy == CONFIG_LRNG_JENT_ENTROPY_RATE)
 		jent_entropy = LRNG_DRNG_SECURITY_STRENGTH_BITS;
 
-	lrng_drng_force_reseed();
 	if (jent_entropy)
-		lrng_es_add_entropy();
+		lrng_force_fully_seeded();
 
 	return 0;
 }
@@ -97,8 +96,9 @@ static void lrng_jent_get(struct entropy_buf *eb, u32 requested_bits,
 		goto err;
 	}
 
-	ret = jent_read_entropy(lrng_jent_state, eb->e[lrng_ext_es_jitter],
-				requested_bits >> 3);
+	ret = crypto_rng_get_bytes(jent, eb->e[lrng_ext_es_jitter],
+				   requested_bits >> 3);
+
 	spin_unlock_irqrestore(&lrng_jent_lock, flags);
 
 	if (ret) {

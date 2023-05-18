@@ -19,18 +19,61 @@
 #include "lrng_interface_dev_common.h"
 #include "lrng_interface_random_kernel.h"
 
+static ATOMIC_NOTIFIER_HEAD(random_ready_notifier);
+
 static RAW_NOTIFIER_HEAD(lrng_ready_chain);
 static DEFINE_SPINLOCK(lrng_ready_chain_lock);
 static unsigned int lrng_ready_chain_used = 0;
 
 /********************************** Helper ***********************************/
 
+static bool lrng_trust_bootloader __initdata =
+	IS_ENABLED(CONFIG_RANDOM_TRUST_BOOTLOADER);
+
+static int __init lrng_parse_trust_bootloader(char *arg)
+{
+	return kstrtobool(arg, &lrng_trust_bootloader);
+}
+early_param("random.trust_bootloader", lrng_parse_trust_bootloader);
+
+static void __init random_init_early(const char *command_line)
+{
+	lrng_rand_initialize_early();
+	lrng_pool_insert_aux(command_line, strlen(command_line), 0);
+}
+
 int __init random_init(const char *command_line)
 {
-	int ret = lrng_rand_initialize();
+	random_init_early(command_line);
+	lrng_rand_initialize();
+	return 0;
+}
 
-	lrng_pool_insert_aux(command_line, strlen(command_line), 0);
+/*
+ * Add a callback function that will be invoked when the LRNG is initialised,
+ * or immediately if it already has been. Only use this is you are absolutely
+ * sure it is required. Most users should instead be able to test
+ * `rng_is_initialized()` on demand, or make use of `get_random_bytes_wait()`.
+ */
+int __cold execute_with_initialized_rng(struct notifier_block *nb)
+{
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&random_ready_notifier.lock, flags);
+	if (rng_is_initialized())
+		nb->notifier_call(nb, 0, NULL);
+	else
+		ret = raw_notifier_chain_register(
+			(struct raw_notifier_head *)&random_ready_notifier.head,
+			nb);
+	spin_unlock_irqrestore(&random_ready_notifier.lock, flags);
 	return ret;
+}
+
+void lrng_kick_random_ready(void)
+{
+	atomic_notifier_call_chain(&random_ready_notifier, 0, NULL);
 }
 
 bool lrng_ready_chain_has_sleeper(void)
@@ -78,12 +121,13 @@ void add_hwgenerator_randomness(const void *buffer, size_t count,
 				size_t entropy_bits)
 {
 	/*
-	 * Suspend writing if we are fully loaded with entropy.
-	 * We'll be woken up again once below lrng_write_wakeup_thresh,
-	 * or when the calling thread is about to terminate.
+	 * Suspend writing if we are fully loaded with entropy or if caller
+	 * did not provide any entropy. We'll be woken up again once below
+	 * lrng_write_wakeup_thresh, or when the calling thread is about to
+	 * terminate.
 	 */
 	wait_event_interruptible(lrng_write_wait,
-				lrng_need_entropy() ||
+				(lrng_need_entropy() && entropy_bits) ||
 				lrng_state_exseed_allow(lrng_noise_source_hw) ||
 				kthread_should_stop());
 	lrng_state_exseed_set(lrng_noise_source_hw, false);
@@ -102,11 +146,9 @@ EXPORT_SYMBOL_GPL(add_hwgenerator_randomness);
  *	 insert into entropy pool.
  * @size: length of buffer
  */
-void add_bootloader_randomness(const void *buf, size_t size)
+void __init add_bootloader_randomness(const void *buf, size_t size)
 {
-	lrng_pool_insert_aux(buf, size,
-			     IS_ENABLED(CONFIG_RANDOM_TRUST_BOOTLOADER) ?
-			     size * 8 : 0);
+	lrng_pool_insert_aux(buf, size, lrng_trust_bootloader ? size * 8 : 0);
 }
 
 /*

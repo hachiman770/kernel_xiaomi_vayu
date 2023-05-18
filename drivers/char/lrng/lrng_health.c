@@ -2,7 +2,7 @@
 /*
  * Entropy Source and DRNG Manager (LRNG) Health Testing
  *
- * Copyright (C) 2022, Stephan Mueller <smueller@chronox.de>
+ * Copyright (C) 2022 - 2023, Stephan Mueller <smueller@chronox.de>
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -10,6 +10,7 @@
 #include <linux/fips.h>
 #include <linux/module.h>
 
+#include "lrng_definitions.h"
 #include "lrng_es_mgr.h"
 #include "lrng_health.h"
 
@@ -141,6 +142,7 @@ static void lrng_sp80090b_startup_failure(struct lrng_health *health,
 {
 	struct lrng_health_es_state *es_state = &health->es_state[es];
 
+
 	/* Reset of LRNG and its entropy - NOTE: we are in atomic context */
 	lrng_reset();
 
@@ -168,16 +170,40 @@ static void lrng_sp80090b_runtime_failure(struct lrng_health *health,
 	es_state->sp80090b_startup_done = false;
 }
 
+static void lrng_rct_reset(struct lrng_rct *rct);
+static void lrng_apt_reset(struct lrng_apt *apt, unsigned int time_masked);
+static void lrng_apt_restart(struct lrng_apt *apt);
+static void lrng_sp80090b_permanent_failure(struct lrng_health *health,
+					    enum lrng_internal_es es)
+{
+	struct lrng_health_es_state *es_state = &health->es_state[es];
+	struct lrng_apt *apt = &es_state->apt;
+	struct lrng_rct *rct = &es_state->rct;
+
+	if (lrng_enforce_panic_on_permanent_health_failure()) {
+		panic("SP800-90B permanent health test failure for internal entropy source %u\n",
+		      es);
+	}
+
+	pr_err("SP800-90B permanent health test failure for internal entropy source %u - invalidating all existing entropy and initiate SP800-90B startup\n",
+	       es);
+	lrng_sp80090b_runtime_failure(health, es);
+
+	lrng_rct_reset(rct);
+	lrng_apt_reset(apt, 0);
+	lrng_apt_restart(apt);
+}
+
 static void lrng_sp80090b_failure(struct lrng_health *health,
 				  enum lrng_internal_es es)
 {
 	struct lrng_health_es_state *es_state = &health->es_state[es];
 
 	if (es_state->sp80090b_startup_done) {
-		pr_err("SP800-90B runtime health test failure for internal entropy source %u - invalidating all existing entropy and initiate SP800-90B startup\n", es);
+		pr_warn("SP800-90B runtime health test failure for internal entropy source %u - invalidating all existing entropy and initiate SP800-90B startup\n", es);
 		lrng_sp80090b_runtime_failure(health, es);
 	} else {
-		pr_err("SP800-90B startup test failure for internal entropy source %u - resetting\n", es);
+		pr_warn("SP800-90B startup test failure for internal entropy source %u - resetting\n", es);
 		lrng_sp80090b_startup_failure(health, es);
 	}
 }
@@ -257,7 +283,9 @@ static void lrng_apt_insert(struct lrng_health *health,
 	if (now_time == (unsigned int)atomic_read(&apt->apt_base)) {
 		u32 apt_val = (u32)atomic_inc_return_relaxed(&apt->apt_count);
 
-		if (apt_val >= CONFIG_LRNG_APT_CUTOFF)
+		if (apt_val >= CONFIG_LRNG_APT_CUTOFF_PERMANENT)
+			lrng_sp80090b_permanent_failure(health, es);
+		else if (apt_val >= CONFIG_LRNG_APT_CUTOFF)
 			lrng_sp80090b_failure(health, es);
 	}
 
@@ -284,6 +312,12 @@ static void lrng_apt_insert(struct lrng_health *health,
  * that no data can be extracted from the entropy pool unless new entropy
  * is received.
  ***************************************************************************/
+
+static void lrng_rct_reset(struct lrng_rct *rct)
+{
+	/* Reset RCT */
+	atomic_set(&rct->rct_count, 0);
+}
 
 /*
  * Hot code path - Insert data for Repetition Count Test
@@ -314,19 +348,12 @@ static void lrng_rct(struct lrng_health *health, enum lrng_internal_es es,
 		 * Hence we need to subtract one from the cutoff value as
 		 * calculated following SP800-90B.
 		 */
-		if (rct_count >= CONFIG_LRNG_RCT_CUTOFF) {
-			atomic_set(&rct->rct_count, 0);
-
-			/*
-			 * APT must start anew as we consider all previously
-			 * recorded data to contain no entropy.
-			 */
-			lrng_apt_restart(&es_state->apt);
-
+		if (rct_count >= CONFIG_LRNG_RCT_CUTOFF_PERMANENT)
+			lrng_sp80090b_permanent_failure(health, es);
+		else if (rct_count >= CONFIG_LRNG_RCT_CUTOFF)
 			lrng_sp80090b_failure(health, es);
-		}
 	} else {
-		atomic_set(&rct->rct_count, 0);
+		lrng_rct_reset(rct);
 	}
 }
 

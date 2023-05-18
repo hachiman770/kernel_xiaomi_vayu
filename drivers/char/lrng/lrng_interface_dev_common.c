@@ -80,6 +80,23 @@ void lrng_state_exseed_allow_all(void)
 
 /************************ LRNG user output interfaces *************************/
 
+ssize_t lrng_read_seed(char __user *buf, size_t nbytes, unsigned int flags)
+{
+	ssize_t ret = 0;
+	u64 t[(sizeof(struct entropy_buf) + 3 * sizeof(u64) - 1) / sizeof(u64)];
+
+	memset(t, 0, sizeof(t));
+	ret = lrng_get_seed(t, min_t(size_t, nbytes, sizeof(t)), flags);
+	if (ret == -EMSGSIZE && copy_to_user(buf, t, sizeof(u64))) {
+		ret = -EFAULT;
+	} else if (ret > 0 && copy_to_user(buf, t, ret)) {
+		ret = -EFAULT;
+	}
+	memzero_explicit(t, sizeof(t));
+
+	return ret;
+}
+
 ssize_t lrng_read_common(char __user *buf, size_t nbytes, bool pr)
 {
 	ssize_t ret = 0;
@@ -230,7 +247,7 @@ ssize_t lrng_drng_write(struct file *file, const char __user *buffer,
 long lrng_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
 	u32 digestsize_bits;
-	int size, ent_count_bits;
+	int size, ent_count_bits, ret;
 	int __user *p = (int __user *)arg;
 
 	switch (cmd) {
@@ -265,8 +282,9 @@ long lrng_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 			return -EINVAL;
 		/* there cannot be more entropy than data */
 		ent_count_bits = min(ent_count_bits, size<<3);
-		return lrng_drng_write_common((const char __user *)p, size,
-					      ent_count_bits);
+		ret = lrng_drng_write_common((const char __user *)p, size,
+					     ent_count_bits);
+		return (ret < 0) ? ret : 0;
 	case RNDZAPENTCNT:
 	case RNDCLEARPOOL:
 		/* Clear the entropy pool counter. */
