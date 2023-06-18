@@ -3448,6 +3448,16 @@ int hif_ahb_configure_irq(struct hif_pci_softc *sc)
 static irqreturn_t hif_ce_interrupt_handler(int irq, void *context)
 {
 	struct ce_tasklet_entry *tasklet_entry = context;
+	struct HIF_CE_state *hif_ce_state = tasklet_entry->hif_ce_state;
+	struct hif_softc *scn = HIF_GET_SOFTC(hif_ce_state);
+
+	hif_irq_disable(scn, tasklet_entry->ce_id);
+	return IRQ_WAKE_THREAD;
+}
+
+static irqreturn_t hif_ce_interrupt_thread(int irq, void *context)
+{
+	struct ce_tasklet_entry *tasklet_entry = context;
 	return ce_dispatch_interrupt(tasklet_entry->ce_id, tasklet_entry);
 }
 extern const char *ce_name[];
