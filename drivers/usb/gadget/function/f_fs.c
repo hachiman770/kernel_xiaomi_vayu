@@ -3230,8 +3230,7 @@ static inline struct f_fs_opts *ffs_do_functionfs_bind(struct usb_function *f,
 	struct ffs_function *func = ffs_func_from_usb(f);
 	struct f_fs_opts *ffs_opts =
 		container_of(f->fi, struct f_fs_opts, func_inst);
-	struct ffs_data *ffs = ffs_opts->dev->ffs_data;
-	struct ffs_data *ffs_data;
+	struct ffs_data *ffs;
 	int ret;
 
 	ENTER();
@@ -3246,13 +3245,13 @@ static inline struct f_fs_opts *ffs_do_functionfs_bind(struct usb_function *f,
 	if (!ffs_opts->no_configfs)
 		ffs_dev_lock();
 	ret = ffs_opts->dev->desc_ready ? 0 : -ENODEV;
-	ffs_data = ffs_opts->dev->ffs_data;
+	ffs = ffs_opts->dev->ffs_data;
 	if (!ffs_opts->no_configfs)
 		ffs_dev_unlock();
 	if (ret)
 		return ERR_PTR(ret);
 
-	func->ffs = ffs_data;
+	func->ffs = ffs;
 	func->conf = c;
 	func->gadget = c->cdev->gadget;
 
@@ -3827,6 +3826,7 @@ static void ffs_func_unbind(struct usb_configuration *c,
 	/* Drain any pending AIO completions */
 	drain_workqueue(ffs->io_completion_wq);
 
+	ffs_event_add(ffs, FUNCTIONFS_UNBIND);
 	if (!--opts->refcnt)
 		functionfs_unbind(ffs);
 
@@ -3851,8 +3851,6 @@ static void ffs_func_unbind(struct usb_configuration *c,
 	func->function.ss_descriptors = NULL;
 	func->function.ssp_descriptors = NULL;
 	func->interfaces_nums = NULL;
-
-	ffs_event_add(ffs, FUNCTIONFS_UNBIND);
 
 	ffs_log("exit: state %d setup_state %d flag %lu", ffs->state,
 		ffs->setup_state, ffs->flags);
@@ -3984,7 +3982,6 @@ static int ffs_acquire_dev(const char *dev_name, struct ffs_data *ffs_data)
 	}
 
 	ffs_dev_unlock();
-
 	return ret;
 }
 
