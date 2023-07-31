@@ -81,7 +81,7 @@ struct bolero_priv {
 	u16 child_count;
 	struct wcd_ctrl_platform_data plat_data;
 	struct device *wcd_dev;
-	struct blocking_notifier_head notifier;
+	struct srcu_notifier_head notifier;
 };
 
 struct regmap *bolero_regmap_init(struct device *dev,
