@@ -1247,7 +1247,7 @@ int mhi_process_ctrl_ev_ring(struct mhi_controller *mhi_cntrl,
 				write_lock_irq(&mhi_cntrl->pm_lock);
 				mhi_cntrl->ee = MHI_EE_SBL;
 				write_unlock_irq(&mhi_cntrl->pm_lock);
-				wake_up_all(&mhi_cntrl->state_event);
+				swake_up_all(&mhi_cntrl->state_event);
 				st = MHI_ST_TRANSITION_SBL;
 				break;
 			case MHI_EE_WFW:
@@ -1655,7 +1655,7 @@ irqreturn_t mhi_intvec_threaded_handlr(int irq_number, void *dev)
 		MHI_ERR("RDDM event occurred!\n");
 		mhi_cntrl->status_cb(mhi_cntrl, mhi_cntrl->priv_data,
 				     MHI_CB_EE_RDDM);
-		wake_up_all(&mhi_cntrl->state_event);
+		swake_up_all(&mhi_cntrl->state_event);
 
 		/* notify critical clients with early notifications */
 		mhi_control_error(mhi_cntrl);
@@ -1665,7 +1665,7 @@ irqreturn_t mhi_intvec_threaded_handlr(int irq_number, void *dev)
 
 	/* if device is in RDDM, don't bother processing SYS_ERR */
 	if (ee != MHI_EE_RDDM && pm_state == MHI_PM_SYS_ERR_DETECT) {
-		wake_up_all(&mhi_cntrl->state_event);
+		swake_up_all(&mhi_cntrl->state_event);
 
 		/* for fatal errors, we let controller decide next step */
 		if (MHI_IN_PBL(ee))
@@ -1695,7 +1695,7 @@ irqreturn_t mhi_intvec_handlr(int irq_number, void *dev)
 			MHICTRL_RESET_MASK, MHICTRL_RESET_SHIFT, &in_reset))
 			mhi_cntrl->initiate_mhi_reset = !!in_reset;
 	}
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 	MHI_VERB("Exit\n");
 
 	if (MHI_IN_MISSION_MODE(mhi_cntrl->ee))
@@ -1779,7 +1779,7 @@ int mhi_send_cmd(struct mhi_controller *mhi_cntrl,
 	spin_unlock_bh(&mhi_cmd->lock);
 
 	if (cmd_db_not_set) {
-		ret = wait_event_timeout(mhi_cntrl->state_event,
+		ret = swait_event_timeout(mhi_cntrl->state_event,
 			MHI_DB_ACCESS_VALID(mhi_cntrl) ||
 			MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
 			msecs_to_jiffies(MHI_RESUME_TIME));

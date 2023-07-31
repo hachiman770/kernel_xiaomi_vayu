@@ -359,7 +359,7 @@ struct mhi_controller {
 	struct work_struct special_work;
 	struct workqueue_struct *wq;
 
-	wait_queue_head_t state_event;
+	struct swait_queue_head state_event;
 
 	/* shadow functions */
 	void (*status_cb)(struct mhi_controller *, void *, enum MHI_CB);

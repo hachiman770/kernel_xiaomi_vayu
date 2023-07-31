@@ -1553,7 +1553,7 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 	spin_lock_init(&mhi_cntrl->transition_lock);
 	spin_lock_init(&mhi_cntrl->wlock);
 	INIT_WORK(&mhi_cntrl->st_worker, mhi_pm_st_worker);
-	init_waitqueue_head(&mhi_cntrl->state_event);
+	init_swait_queue_head(&mhi_cntrl->state_event);
 
 	mhi_cntrl->wq = alloc_ordered_workqueue("mhi_w",
 						WQ_MEM_RECLAIM | WQ_HIGHPRI);

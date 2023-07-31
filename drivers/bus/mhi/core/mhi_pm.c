@@ -258,7 +258,7 @@ int mhi_ready_state_transition(struct mhi_controller *mhi_cntrl)
 	MHI_CNTRL_LOG("Waiting to enter READY state\n");
 
 	/* wait for RESET to be cleared and READY bit to be set */
-	wait_event_timeout(mhi_cntrl->state_event,
+	swait_event_timeout(mhi_cntrl->state_event,
 			   MHI_PM_IN_FATAL_STATE(mhi_cntrl->pm_state) ||
 			   mhi_read_reg_field(mhi_cntrl, base, MHICTRL,
 					      MHICTRL_RESET_MASK,
@@ -393,7 +393,7 @@ int mhi_pm_m0_transition(struct mhi_controller *mhi_cntrl)
 
 	mhi_cntrl->wake_put(mhi_cntrl, false);
 	read_unlock_bh(&mhi_cntrl->pm_lock);
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 	MHI_VERB("Exited\n");
 
 	return 0;
@@ -423,7 +423,7 @@ void mhi_pm_m1_transition(struct mhi_controller *mhi_cntrl)
 	mhi_cntrl->M2++;
 
 	write_unlock_irq(&mhi_cntrl->pm_lock);
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 
 	/* transfer pending, exit M2 immediately */
 	if (unlikely(atomic_read(&mhi_cntrl->pending_pkts) ||
@@ -456,7 +456,7 @@ int mhi_pm_m3_transition(struct mhi_controller *mhi_cntrl)
 			to_mhi_pm_state_str(mhi_cntrl->pm_state));
 		return -EIO;
 	}
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 	mhi_cntrl->M3++;
 
 	MHI_LOG("Entered mhi_state:%s pm_state:%s\n",
@@ -489,7 +489,7 @@ static int mhi_pm_mission_mode_transition(struct mhi_controller *mhi_cntrl)
 	mhi_cntrl->ee = ee;
 	write_unlock_irq(&mhi_cntrl->pm_lock);
 
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 
 	/* offload register write if supported */
 	if (mhi_cntrl->offload_wq) {
@@ -605,7 +605,7 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 	write_unlock_irq(&mhi_cntrl->pm_lock);
 
 	/* wake up any threads waiting for state transitions */
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 
 	/* not handling sys_err, could be middle of shut down */
 	if (cur_state != transition_state) {
@@ -626,7 +626,7 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 		write_unlock_irq(&mhi_cntrl->pm_lock);
 
 		/* wait for reset to be cleared */
-		ret = wait_event_timeout(mhi_cntrl->state_event,
+		ret = swait_event_timeout(mhi_cntrl->state_event,
 				!mhi_cntrl->initiate_mhi_reset, timeout);
 		if (!ret && cur_state == MHI_PM_SYS_ERR_PROCESS) {
 			MHI_CRITICAL("Device failed to exit RESET state\n");
@@ -665,7 +665,7 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 	mhi_destroy_sysfs(mhi_cntrl);
 
 	MHI_CNTRL_LOG("Waiting for all pending threads to complete\n");
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 	flush_work(&mhi_cntrl->special_work);
 
 	if (sfr_info && sfr_info->buf_addr) {
@@ -752,7 +752,7 @@ int mhi_debugfs_trigger_reset(void *data, u64 val)
 	mhi_cntrl->runtime_get(mhi_cntrl, mhi_cntrl->priv_data);
 	mhi_cntrl->runtime_put(mhi_cntrl, mhi_cntrl->priv_data);
 
-	ret = wait_event_timeout(mhi_cntrl->state_event,
+	ret = swait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->dev_state == MHI_STATE_M0 ||
 				 MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
 				 msecs_to_jiffies(mhi_cntrl->timeout_ms));
@@ -1063,7 +1063,7 @@ void mhi_control_error(struct mhi_controller *mhi_cntrl)
 	mhi_cntrl->dev_state = MHI_STATE_SYS_ERR;
 
 	/* notify waiters to bail out early since MHI has entered ERROR state */
-	wake_up_all(&mhi_cntrl->state_event);
+	swake_up_all(&mhi_cntrl->state_event);
 
 	/* start notifying all clients who request early notification */
 	device_for_each_child(mhi_cntrl->dev, NULL, mhi_early_notify_device);
@@ -1125,7 +1125,7 @@ int mhi_sync_power_up(struct mhi_controller *mhi_cntrl)
 	if (ret)
 		return ret;
 
-	wait_event_timeout(mhi_cntrl->state_event,
+	swait_event_timeout(mhi_cntrl->state_event,
 			   MHI_IN_MISSION_MODE(mhi_cntrl->ee) ||
 			   MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
 			   msecs_to_jiffies(mhi_cntrl->timeout_ms));
@@ -1160,7 +1160,7 @@ int mhi_pm_suspend(struct mhi_controller *mhi_cntrl)
 	mhi_cntrl->wake_get(mhi_cntrl, false);
 	read_unlock_bh(&mhi_cntrl->pm_lock);
 
-	ret = wait_event_timeout(mhi_cntrl->state_event,
+	ret = swait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->dev_state == MHI_STATE_M0 ||
 				 mhi_cntrl->dev_state == MHI_STATE_M1 ||
 				 MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
@@ -1212,7 +1212,7 @@ int mhi_pm_suspend(struct mhi_controller *mhi_cntrl)
 	/* finish reg writes before D3 cold */
 	mhi_force_reg_write(mhi_cntrl);
 
-	ret = wait_event_timeout(mhi_cntrl->state_event,
+	ret = swait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->dev_state == MHI_STATE_M3 ||
 				 MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
 				 msecs_to_jiffies(mhi_cntrl->timeout_ms));
@@ -1267,7 +1267,7 @@ int mhi_pm_fast_suspend(struct mhi_controller *mhi_cntrl, bool notify_client)
 	}
 
 	/* wait here if controller wants device to be in M2 before proceeding */
-	wait_event_timeout(mhi_cntrl->state_event,
+	swait_event_timeout(mhi_cntrl->state_event,
 			   mhi_cntrl->dev_state == MHI_STATE_M2,
 			   msecs_to_jiffies(mhi_cntrl->m2_timeout_ms));
 
@@ -1397,7 +1397,7 @@ int mhi_pm_resume(struct mhi_controller *mhi_cntrl)
 	mhi_set_mhi_state(mhi_cntrl, MHI_STATE_M0);
 	write_unlock_irq(&mhi_cntrl->pm_lock);
 
-	ret = wait_event_timeout(mhi_cntrl->state_event,
+	ret = swait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->dev_state == MHI_STATE_M0 ||
 				 MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
 				 msecs_to_jiffies(mhi_cntrl->timeout_ms));
@@ -1523,7 +1523,7 @@ int __mhi_device_get_sync(struct mhi_controller *mhi_cntrl)
 	/* for offload write make sure wake DB is set before any MHI reg read */
 	mhi_force_reg_write(mhi_cntrl);
 
-	ret = wait_event_timeout(mhi_cntrl->state_event,
+	ret = swait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->pm_state == MHI_PM_M0 ||
 				 MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state),
 				 msecs_to_jiffies(mhi_cntrl->timeout_ms));
@@ -1687,7 +1687,7 @@ int mhi_force_rddm_mode(struct mhi_controller *mhi_cntrl)
 
 	/* wait for rddm event */
 	MHI_CNTRL_LOG("Waiting for device to enter RDDM state\n");
-	ret = wait_event_timeout(mhi_cntrl->state_event,
+	ret = swait_event_timeout(mhi_cntrl->state_event,
 				 mhi_cntrl->ee == MHI_EE_RDDM,
 				 msecs_to_jiffies(mhi_cntrl->timeout_ms));
 	ret = ret ? 0 : -EIO;

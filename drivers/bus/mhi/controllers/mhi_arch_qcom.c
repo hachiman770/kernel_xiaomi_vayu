@@ -342,7 +342,7 @@ static void mhi_boot_monitor(void *data, async_cookie_t cookie)
 	const u32 timeout = msecs_to_jiffies(15000);
 
 	/* wait for device to enter boot stage */
-	wait_event_timeout(mhi_cntrl->state_event, mhi_cntrl->ee == MHI_EE_AMSS
+	swait_event_timeout(mhi_cntrl->state_event, mhi_cntrl->ee == MHI_EE_AMSS
 			   || mhi_cntrl->ee == MHI_EE_DISABLE_TRANSITION
 			   || mhi_cntrl->power_down,
 			   timeout);
